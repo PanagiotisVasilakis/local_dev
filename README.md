@@ -4,7 +4,7 @@ Local-first agentic software-engineering system focused on high-quality code, ev
 
 ## Current status
 
-`TASK-001` (repository foundation) and `TASK-002` (hard budget governor) are complete, reviewed, and integrated into the canonical `master` branch. No paid model provider is connected yet.
+`TASK-001` (repository foundation), `TASK-002` (hard budget governor), and `TASK-003` (provider abstraction and paid-call boundary) are complete, reviewed, and integrated into the canonical `master` branch. No real paid model provider is connected yet.
 
 ## Design principles
 
@@ -12,8 +12,9 @@ Local-first agentic software-engineering system focused on high-quality code, ev
 - Deterministic orchestration around probabilistic models.
 - Evidence from repository state and executed tools is authoritative; model summaries are not.
 - A verification result cannot be marked `PASSED` without an evidence reference.
-- Every paid call must pass through the hard budget governor before it can be authorized.
+- Every paid call must pass through the application-owned paid-call gateway and hard budget governor before provider transport can execute.
 - Monetary values used for budget enforcement are represented exactly, never as binary floats.
+- Ambiguous provider-dispatch outcomes fail closed: budget remains reserved and replay is blocked.
 - Modular monolith first; split services only when measurements justify it.
 - Runtime dependencies are added only when they provide material value.
 
@@ -43,7 +44,9 @@ mypy src
 | `LOCAL_DEV_MONTHLY_BUDGET_EUR` | `20` | Hard monthly paid-API ceiling |
 | `LOCAL_DEV_LOG_LEVEL` | `INFO` | Structured logging level |
 
-`TASK-002` enforces the budget ceiling durably in SQLite using reservation-before-call authorization. No paid provider adapter should be added unless all paid requests are routed through that boundary.
+`TASK-002` enforces the budget ceiling durably in SQLite using reservation-before-call authorization. `TASK-003` adds the provider-neutral `PaidCallGateway`: future paid provider adapters must quote locally, reserve budget, durably enter dispatch state, execute transport, and then settle/cancel/hold accounting through this boundary.
+
+No real paid provider SDK or network integration has been added yet.
 
 ## Database migrations
 
