@@ -4,7 +4,7 @@ Local-first agentic software-engineering system focused on high-quality code, ev
 
 ## Current status
 
-`TASK-001` establishes the repository foundation only. No paid model provider is connected yet.
+`TASK-001` (repository foundation) and `TASK-002` (hard budget governor) are complete, reviewed, and integrated into the canonical `master` branch. No paid model provider is connected yet.
 
 ## Design principles
 
@@ -12,10 +12,14 @@ Local-first agentic software-engineering system focused on high-quality code, ev
 - Deterministic orchestration around probabilistic models.
 - Evidence from repository state and executed tools is authoritative; model summaries are not.
 - A verification result cannot be marked `PASSED` without an evidence reference.
-- Paid calls must eventually pass through a hard budget governor.
+- Every paid call must pass through the hard budget governor before it can be authorized.
 - Monetary values used for budget enforcement are represented exactly, never as binary floats.
 - Modular monolith first; split services only when measurements justify it.
 - Runtime dependencies are added only when they provide material value.
+
+## Branch workflow
+
+`master` is the canonical integration branch. New work is implemented on task-scoped branches and is merged/fast-forwarded into `master` only after implementation plus the mandatory deep-review/adversarial-verification gate have passed.
 
 ## Development
 
@@ -36,10 +40,10 @@ mypy src
 | --- | --- | --- |
 | `LOCAL_DEV_DATA_DIR` | `~/.local/share/local-dev` | Local persistent state directory |
 | `LOCAL_DEV_DATABASE_PATH` | `<data-dir>/local_dev.db` | SQLite database path |
-| `LOCAL_DEV_MONTHLY_BUDGET_EUR` | `20` | Future hard monthly API ceiling |
+| `LOCAL_DEV_MONTHLY_BUDGET_EUR` | `20` | Hard monthly paid-API ceiling |
 | `LOCAL_DEV_LOG_LEVEL` | `INFO` | Structured logging level |
 
-The €20 value is configuration only in TASK-001. Enforcement is implemented in TASK-002; no paid provider calls should be added before that governor exists.
+`TASK-002` enforces the budget ceiling durably in SQLite using reservation-before-call authorization. No paid provider adapter should be added unless all paid requests are routed through that boundary.
 
 ## Database migrations
 
