@@ -59,7 +59,7 @@ class _NoRedirectHandler(HTTPRedirectHandler):
 
 
 class UrllibLocalHttpTransport:
-    """stdlib HTTP transport that refuses redirects and bounds response size."""
+    """stdlib HTTP transport restricted to loopback, without proxies or redirects."""
 
     def __init__(self) -> None:
         self._opener = build_opener(ProxyHandler({}), _NoRedirectHandler())
@@ -74,7 +74,8 @@ class UrllibLocalHttpTransport:
         timeout_seconds: float,
         max_response_bytes: int,
     ) -> _HttpResponse:
-        request = Request(url=url, data=body, headers=headers, method=method)
+        safe_url = _validate_loopback_http_url(url)
+        request = Request(url=safe_url, data=body, headers=headers, method=method)
         try:
             with self._opener.open(request, timeout=timeout_seconds) as response:
                 payload = response.read(max_response_bytes + 1)
@@ -111,7 +112,6 @@ class OpenAICompatibleLocalRuntime:
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
         api_key: str | None = None,
         runtime_name: str = "openai-compatible-local",
-        transport: _HttpTransport | None = None,
     ) -> None:
         self._base_url = _validate_loopback_base_url(base_url)
         if (
@@ -127,6 +127,8 @@ class OpenAICompatibleLocalRuntime:
             or max_response_bytes <= 0
         ):
             raise ValueError("max_response_bytes must be a positive integer")
+        if not isinstance(runtime_name, str):
+            raise TypeError("runtime_name must be a string")
         name = runtime_name.strip()
         if not name:
             raise ValueError("runtime_name must not be empty")
@@ -137,7 +139,7 @@ class OpenAICompatibleLocalRuntime:
         self._max_response_bytes = max_response_bytes
         self._api_key = api_key
         self._name = name
-        self._transport = transport or UrllibLocalHttpTransport()
+        self._transport: _HttpTransport = UrllibLocalHttpTransport()
 
     @property
     def name(self) -> str:
@@ -228,19 +230,19 @@ class OpenAICompatibleLocalRuntime:
             ) from exc
 
 
-def _validate_loopback_base_url(raw: str) -> str:
+def _validate_loopback_http_url(raw: str) -> str:
     if not isinstance(raw, str) or not raw.strip():
-        raise ValueError("base_url must not be empty")
-    value = raw.strip().rstrip("/")
+        raise ValueError("local runtime URL must not be empty")
+    value = raw.strip()
     parsed = urlsplit(value)
     if parsed.scheme != "http":
-        raise ValueError("local runtime base_url must use http")
+        raise ValueError("local runtime URL must use http")
     if parsed.username is not None or parsed.password is not None:
-        raise ValueError("local runtime base_url must not contain credentials")
+        raise ValueError("local runtime URL must not contain credentials")
     if parsed.query or parsed.fragment:
-        raise ValueError("local runtime base_url must not contain query or fragment")
+        raise ValueError("local runtime URL must not contain query or fragment")
     if parsed.hostname is None:
-        raise ValueError("local runtime base_url must contain a host")
+        raise ValueError("local runtime URL must contain a host")
     try:
         host = ipaddress.ip_address(parsed.hostname)
     except ValueError as exc:
@@ -252,8 +254,12 @@ def _validate_loopback_base_url(raw: str) -> str:
     try:
         _ = parsed.port
     except ValueError as exc:
-        raise ValueError("local runtime base_url contains an invalid port") from exc
+        raise ValueError("local runtime URL contains an invalid port") from exc
     return value
+
+
+def _validate_loopback_base_url(raw: str) -> str:
+    return _validate_loopback_http_url(raw).rstrip("/")
 
 
 def _parse_models(payload: object) -> tuple[str, ...]:

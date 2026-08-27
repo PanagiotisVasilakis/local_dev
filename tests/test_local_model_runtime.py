@@ -48,10 +48,9 @@ def request() -> LocalGenerationRequest:
 
 
 def runtime(transport: FakeTransport) -> OpenAICompatibleLocalRuntime:
-    return OpenAICompatibleLocalRuntime(
-        "http://127.0.0.1:11434/v1",
-        transport=transport,
-    )
+    instance = OpenAICompatibleLocalRuntime("http://127.0.0.1:11434/v1")
+    instance._transport = transport
+    return instance
 
 
 @pytest.mark.parametrize(
@@ -322,3 +321,16 @@ def test_default_transport_enforces_response_size_limit() -> None:
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_default_transport_rejects_direct_non_loopback_url() -> None:
+    transport = UrllibLocalHttpTransport()
+    with pytest.raises(ValueError, match="loopback"):
+        transport.request(
+            method="GET",
+            url="http://8.8.8.8/",
+            headers={},
+            body=None,
+            timeout_seconds=1,
+            max_response_bytes=32,
+        )

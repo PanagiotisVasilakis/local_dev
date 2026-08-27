@@ -77,14 +77,14 @@ class BudgetGovernor:
         worst_case_eur: Decimal,
         now: datetime | None = None,
     ) -> BudgetReservation:
-        key = idempotency_key.strip()
-        provider = provider.strip()
-        model = model.strip()
-        if not key or not provider or not model:
-            raise ValueError("idempotency_key, provider, and model must not be empty")
+        key = _non_empty_string(idempotency_key, "idempotency_key")
+        provider = _non_empty_string(provider, "provider")
+        model = _non_empty_string(model, "model")
+        _require_uuid(task_id, "task_id")
         reserved_micros = _eur_to_micros(worst_case_eur)
-        period = _period(now)
-        created_at = _timestamp(now)
+        instant = _utc(now)
+        period = _period_from_utc(instant)
+        created_at = instant.isoformat()
 
         with self._database.immediate_transaction() as connection:
             existing = connection.execute(
@@ -162,8 +162,9 @@ class BudgetGovernor:
         actual_eur: Decimal,
         now: datetime | None = None,
     ) -> BudgetReservation:
+        _require_uuid(reservation_id, "reservation_id")
         actual_micros = _eur_to_micros(actual_eur, allow_zero=True)
-        timestamp = _timestamp(now)
+        timestamp = _utc(now).isoformat()
         breached = False
 
         with self._database.immediate_transaction() as connection:
@@ -223,7 +224,8 @@ class BudgetGovernor:
         )
 
     def cancel(self, reservation_id: UUID, *, now: datetime | None = None) -> None:
-        timestamp = _timestamp(now)
+        _require_uuid(reservation_id, "reservation_id")
+        timestamp = _utc(now).isoformat()
         with self._database.immediate_transaction() as connection:
             row = connection.execute(
                 "SELECT status FROM budget_reservations WHERE reservation_id = ?",
@@ -243,7 +245,8 @@ class BudgetGovernor:
             )
 
     def snapshot(self, *, now: datetime | None = None) -> BudgetSnapshot:
-        period = _period(now)
+        instant = _utc(now)
+        period = _period_from_utc(instant)
         with self._database.connect() as connection:
             policy = connection.execute(
                 "SELECT limit_micros FROM budget_periods WHERE period_utc = ?",
@@ -327,16 +330,39 @@ def _micros_to_eur(value: int) -> Decimal:
 
 
 def _utc(now: datetime | None) -> datetime:
-    value = now or datetime.now(UTC)
+    if now is None:
+        value = datetime.now(UTC)
+    else:
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime when present")
+        value = now
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     return value.astimezone(UTC)
 
 
-def _period(now: datetime | None) -> str:
-    value = _utc(now)
+def _period_from_utc(value: datetime) -> str:
     return f"{value.year:04d}-{value.month:02d}"
+
+
+def _period(now: datetime | None) -> str:
+    return _period_from_utc(_utc(now))
 
 
 def _timestamp(now: datetime | None) -> str:
     return _utc(now).isoformat()
+
+
+def _require_uuid(value: object, name: str) -> UUID:
+    if not isinstance(value, UUID):
+        raise TypeError(f"{name} must be UUID")
+    return value
+
+
+def _non_empty_string(value: object, name: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{name} must not be empty")
+    return normalized
