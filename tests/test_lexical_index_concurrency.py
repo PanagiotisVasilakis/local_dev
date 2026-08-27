@@ -179,3 +179,4 @@ def test_search_remains_read_only_during_concurrent_sync(
     assert old_response.hits
     assert index.search(second, "newword").hits
 
+
