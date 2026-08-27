@@ -1,6 +1,6 @@
 # TASK-003 — Provider abstraction and paid-call boundary
 
-Status: `IMPLEMENTED — REVIEW GATE PENDING`.
+Status: `PASS — implemented, deeply reviewed, and hardened`.
 
 ## Objective
 
@@ -69,6 +69,24 @@ Migration `004_provider_call_boundary.sql` creates `provider_calls` with:
 
 Database triggers reject deletion, identity mutation, and invalid lifecycle transitions.
 
-## Verification gate
+## Deep review findings
 
-Before this task becomes `PASS`, the standing project rule requires a separate committed-code review, adversarial verification, corrections for any findings, and a final re-run. Unavailable lint/type/build gates must be reported rather than inferred.
+The post-implementation review inspected the committed gateway, schema, state transitions, crash windows, concurrency behavior, and TASK-002 interaction.
+
+A potential silent `UPDATE 0 rows` concern in terminal journal updates was investigated. Under supported database operations the provider-call row cannot disappear because `provider_calls_no_delete` prevents deletion and all state transitions are serialized. It therefore does not create a reachable correctness gap within this task's supported invariants.
+
+No unresolved architectural or correctness blocker remains in the TASK-003 scope.
+
+## Verification evidence
+
+- Executable isolated gateway harness: 15/15 adversarial tests passed.
+- Covered budget rejection before dispatch, success settlement, explicit `not_sent` cancellation, uncertain provider failures, invalid/mismatched responses, same-key concurrency, replay blocking, conflicting requests, actual-cost breach propagation, unknown providers, duplicate adapter names, DB transition guards, and provider/model normalization.
+- Committed provider contracts, gateway code, tests, and migration passed Python syntax compilation.
+- Migration `004_provider_call_boundary.sql` passed SQLite complete-statement validation.
+- Repository diff inspection confirms TASK-003 is exactly one task commit ahead of `master` and limited to provider boundary code, migration, tests, and task documentation.
+
+The isolated execution environment did not contain the full repository as a local checkout, so the 15-test executable harness used the committed provider implementation with compatible local database/budget test doubles. The actual committed TASK-002 `budget.py` and `db.py` were separately re-inspected during the deep review. A full repository-wide pytest/ruff/mypy run is therefore not claimed here.
+
+## Result
+
+TASK-003 is ready for integration after user approval. No real paid provider is connected yet; TASK-003 only establishes the controlled, budget-governed execution boundary that future provider adapters must use.
