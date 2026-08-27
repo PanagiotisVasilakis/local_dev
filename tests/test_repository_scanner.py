@@ -391,7 +391,7 @@ def test_non_utf8_filename_has_stable_escaped_fingerprint_and_map(tmp_path: Path
     assert snapshot.entry_count == 1
     assert snapshot.entries[0].language == "Python"
     rendered = render_repo_map(snapshot)
-    assert "\udcff" in rendered.lower()
+    assert r"\udcff" in rendered.lower()
     assert len(snapshot.fingerprint_sha256) == 64
 
 
