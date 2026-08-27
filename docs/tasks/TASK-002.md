@@ -1,6 +1,6 @@
 # TASK-002 — Hard Budget Governor
 
-Status: `IMPLEMENTED — REVIEW GATE PENDING`.
+Status: `PASS — implemented, deeply reviewed, and hardened`.
 
 ## Objective
 
@@ -31,11 +31,12 @@ The check and reservation insertion execute inside the same SQLite `BEGIN IMMEDI
 
 1. The governor never authorizes a reservation whose bounded worst-case cost makes `spent + reserved` exceed the durable period limit.
 2. Concurrent reservation attempts serialize before they read budget state.
-3. The first reservation in a UTC month persists the period limit. A process configured with a different limit fails closed for that period.
-4. Reservation identity, reserved amount, and period policy cannot be silently edited or deleted through normal SQLite writes because DB triggers reject those mutations.
+3. The first reservation in a UTC month persists the period limit. A process configured with a different limit fails closed for that period, including idempotent reservation retries.
+4. Reservation identity, reserved amount, period policy, and terminal reservation states cannot be silently edited or deleted through normal SQLite writes because DB triggers reject those mutations.
 5. Duplicate idempotency keys cannot create duplicate reservations.
 6. Settlement with an actual cost above the pre-authorized worst-case amount is durably recorded as a breach and locks the period against new reservations.
 7. Binary floating-point values are rejected at monetary API boundaries.
+8. A blocked reservation raises a clear pre-call error stating that no paid call was authorized.
 
 ## Important guarantee boundary
 
@@ -57,8 +58,31 @@ The governor can guarantee authorization against the cost bound it is given. It 
 - lifecycle status and timestamps
 - breach reason
 
-CHECK constraints enforce valid state combinations, and triggers reject deletion or mutation of ledger identity/policy fields.
+CHECK constraints enforce valid state combinations. Triggers reject deletion or mutation of ledger identity/policy fields and make terminal reservation rows immutable.
 
-## Review gate
+## Review findings corrected
 
-Before changing this document to `PASS`, the task must undergo the standing deep-review rule in `docs/PROJECT_RULES.md`: inspect the committed implementation independently, run adversarial tests, correct findings, re-run verification, and report any unavailable gates explicitly.
+The mandatory post-implementation review found and corrected two additional consistency defects:
+
+1. Idempotent reservation lookup originally returned an existing reservation before checking whether the current process used the same durable monthly limit. The retry path now enforces the durable period policy as well.
+2. Initial ledger triggers protected reservation identity and deletion but did not prevent a terminal `settled`, `cancelled`, or `breached` row from being rewritten into another otherwise-valid lifecycle state. Migration `003_budget_terminal_immutability.sql` now rejects every update to a terminal reservation row.
+
+The review also verified the existing protections for conservative monetary rounding, SQLite integer-range overflow, period rollover, duplicate idempotency conflicts, actual-cost breach handling, immutable period policy, and concurrent oversubscription.
+
+## Verification evidence
+
+The reviewed implementation was reconstructed in the isolated execution environment and verified with:
+
+- 22/22 budget-specific and adversarial pytest tests passing.
+- Explicit two-thread concurrent-reservation race testing demonstrating that only one `€0.75` reservation can succeed against a `€1.00` ceiling.
+- Regression tests for durable-limit enforcement on idempotent lookup and terminal-row immutability.
+- SQLite migration execution through migrations `001`, `002`, and `003`.
+- Python bytecode compilation of the reviewed `src/` and task-specific test files.
+- Repository diff inspection confirming TASK-002 changes are limited to budget/database/task-rule files.
+- Default `master` verification confirming it remains at the original commit `30c655a94e7da96a9ccdbe40db2a6ea10adc2174`.
+
+`ruff` and `mypy` remain configured development gates but were not available in the isolated execution runtime. They are therefore explicitly not claimed as executed PASS evidence.
+
+## Result
+
+No unresolved correctness or architectural blocker remains within the scope of TASK-002. Provider-specific cost estimators and provider-call wiring are intentionally deferred to later tasks; those components must consume this governor before any paid network call is possible.
