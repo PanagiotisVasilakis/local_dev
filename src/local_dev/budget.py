@@ -102,6 +102,11 @@ class BudgetGovernor:
                 ):
                     raise BudgetConflict("idempotency key was already used with different parameters")
                 self._ensure_period_policy(connection, period, created_at)
+                if reservation.status is not ReservationStatus.ACTIVE:
+                    raise BudgetConflict(
+                        "idempotency key refers to a terminal reservation and cannot authorize "
+                        "another paid call"
+                    )
                 return reservation
 
             self._ensure_period_policy(connection, period, created_at)
