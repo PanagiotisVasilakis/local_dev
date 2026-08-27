@@ -26,7 +26,7 @@ The contract now requires a real `VerificationStatus` and defensively normalizes
 
 Several boundary contracts relied on Python annotations for UUID/integer/enum validity. This allowed values such as booleans or floats in token limits and non-UUID task identifiers to survive construction. In a paid path, an invalid task identifier could have been serialized into the durable budget ledger and fail only when read back.
 
-Core and local-runtime request contracts now validate deterministic scalar types at runtime. Paid budget authorization also validates task/reservation UUIDs and string identities before persistence.
+Core, local-runtime, and paid-provider boundary contracts now validate deterministic scalar types at runtime. Paid budget authorization also validates task/reservation UUIDs and string identities before persistence.
 
 ### 3. UTC month-boundary clock split
 
@@ -40,11 +40,21 @@ The provider journal had a foreign key to a reservation, but SQLite did not veri
 
 Append-only migration `005_provider_reservation_coherence.sql` adds a fail-closed insert trigger enforcing those relationships in durable state.
 
+A second review then identified lifecycle coherence as a separate concern. Append-only migration `006_provider_lifecycle_coherence.sql` validates existing journal/ledger pairs and adds transition guards so provider terminal states cannot contradict reservation state, and a reservation linked to a provider call cannot become terminal unless that call is in `dispatching`.
+
+The `ProviderNotSentError` path now cancels the reservation before recording the `not_sent` journal state. If the terminal journal write then fails, replay remains blocked by the terminal budget reservation and the conservative `dispatching` row can be reconciled later.
+
 ### 5. Local transport public injection weakened the loopback claim
 
 `OpenAICompatibleLocalRuntime` publicly accepted an arbitrary transport implementation. That was useful for tests but made the public loopback-only configuration guarantee weaker than its documentation. The default transport was also exported and could be called directly with an arbitrary URL.
 
 The production constructor no longer accepts a transport override. Tests replace the private transport after construction. `UrllibLocalHttpTransport` now independently validates every URL as numeric loopback before opening it.
+
+### 6. Paid-provider contracts relied on annotations for boundary typing
+
+Provider quote/response identities, gateway request values, adapter names, and metadata could fail with incidental Python attribute errors rather than explicit boundary validation when supplied with malformed runtime values.
+
+The paid-provider contracts and gateway now reject malformed runtime types before budget or provider state is mutated.
 
 ## Non-blocking observations
 
@@ -52,7 +62,8 @@ The production constructor no longer accepts a transport override. Tests replace
 - No cloud CI is introduced by this audit. The project remains local-first and does not add runtime dependencies.
 - Conservative provider `dispatching`/`uncertain` records still require a future reconciliation workflow. This is intentional fail-closed behavior already documented in TASK-003, not an audit regression.
 - The durable budget limit is immutable within an established UTC period. An explicit same-month policy-change workflow does not yet exist; failure is conservative rather than permissive.
+- The current paid and local model request contracts are intentionally different and still text-oriented. A unified richer conversation/tool-call contract should be designed when routing/agent tool use is implemented, before real paid-provider adapters are considered production-ready.
 
 ## Verification gate
 
-This audit is not complete until the committed hardening receives an independent review and adversarial re-verification. Only then may it be integrated into `master` and used as the baseline for TASK-005.
+This audit is not complete until the final committed hardening receives another adversarial re-verification. Only then may it be integrated into `master` and used as the baseline for TASK-005.

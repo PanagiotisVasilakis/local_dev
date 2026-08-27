@@ -21,15 +21,14 @@ class CostQuote:
     reference: str
 
     def __post_init__(self) -> None:
-        provider = self.provider.strip()
-        model = self.model.strip()
-        reference = self.reference.strip()
-        if not provider or not model or not reference:
-            raise ValueError("provider, model, and quote reference must not be empty")
+        object.__setattr__(self, "provider", _non_empty_string(self.provider, "provider"))
+        object.__setattr__(self, "model", _non_empty_string(self.model, "model"))
+        object.__setattr__(
+            self,
+            "reference",
+            _non_empty_string(self.reference, "quote reference"),
+        )
         _validate_money(self.worst_case_eur, allow_zero=False)
-        object.__setattr__(self, "provider", provider)
-        object.__setattr__(self, "model", model)
-        object.__setattr__(self, "reference", reference)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,20 +41,14 @@ class ProviderResponse:
     metadata: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        provider = self.provider.strip()
-        model = self.model.strip()
-        if not provider or not model:
-            raise ValueError("provider and model must not be empty")
+        object.__setattr__(self, "provider", _non_empty_string(self.provider, "provider"))
+        object.__setattr__(self, "model", _non_empty_string(self.model, "model"))
         if not isinstance(self.output_text, str):
             raise TypeError("output_text must be a string")
         _validate_money(self.actual_cost_eur, allow_zero=True)
         request_id = self.provider_request_id
         if request_id is not None:
-            request_id = request_id.strip()
-            if not request_id:
-                raise ValueError("provider_request_id must be non-empty when present")
-        object.__setattr__(self, "provider", provider)
-        object.__setattr__(self, "model", model)
+            request_id = _non_empty_string(request_id, "provider_request_id")
         object.__setattr__(self, "provider_request_id", request_id)
         object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
@@ -75,6 +68,15 @@ class PaidProviderAdapter(Protocol):
         ...
 
 
+def _non_empty_string(value: object, name: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{name} must not be empty")
+    return normalized
+
+
 def _validate_money(value: Decimal, *, allow_zero: bool) -> None:
     if not isinstance(value, Decimal):
         raise TypeError("monetary values must be Decimal")
@@ -86,6 +88,8 @@ def _validate_money(value: Decimal, *, allow_zero: bool) -> None:
 
 
 def _freeze_metadata(metadata: Mapping[str, str]) -> Mapping[str, str]:
+    if not isinstance(metadata, Mapping):
+        raise TypeError("metadata must be a mapping")
     copied: dict[str, str] = {}
     for key, value in metadata.items():
         if not isinstance(key, str) or not key.strip():

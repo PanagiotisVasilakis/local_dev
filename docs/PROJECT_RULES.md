@@ -12,3 +12,4 @@ These rules are standing constraints for work on this repository.
 8. Prefer a modular monolith and minimal dependencies. Add complexity only when it produces a concrete quality, reliability, or maintainability gain.
 9. Preserve exact monetary accounting for paid APIs. Never use binary floating-point values for budget enforcement.
 10. The configured personal paid-API ceiling is €20 per UTC calendar month unless the user explicitly changes it. A provider call must never be authorized when committed spend plus active reservations plus the bounded worst-case cost of the new call would exceed the durable monthly policy.
+11. Type annotations are not deterministic enforcement. Boundary contracts that protect verification, identity, accounting, routing, or network safety must validate security-relevant runtime types and defensively copy/freeze mutable caller-owned inputs.

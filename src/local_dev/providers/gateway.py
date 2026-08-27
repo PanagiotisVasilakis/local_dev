@@ -88,6 +88,10 @@ class PaidCallGateway:
         idempotency_key: str,
         now: datetime | None = None,
     ) -> PaidCallResult:
+        if not isinstance(request, ModelRequest):
+            raise TypeError("request must be ModelRequest")
+        if not isinstance(idempotency_key, str):
+            raise TypeError("idempotency_key must be a string")
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key must not be empty")
@@ -125,12 +129,6 @@ class PaidCallGateway:
         try:
             response = adapter.execute(request, quote)
         except ProviderNotSentError as exc:
-            self._finish_call(
-                record.call_id,
-                ProviderCallStatus.NOT_SENT,
-                error_type=type(exc).__name__,
-                now=now,
-            )
             try:
                 self._budget.cancel(reservation.reservation_id, now=now)
             except Exception as cancel_exc:
@@ -138,6 +136,12 @@ class PaidCallGateway:
                     "provider proved the call was not sent, but reservation cancellation "
                     "failed; budget remains conservatively held"
                 ) from cancel_exc
+            self._finish_call(
+                record.call_id,
+                ProviderCallStatus.NOT_SENT,
+                error_type=type(exc).__name__,
+                now=now,
+            )
             raise
         except Exception as exc:
             self._mark_uncertain(record.call_id, type(exc).__name__, now=now)
@@ -196,7 +200,7 @@ class PaidCallGateway:
     def _validate_quote(self, request: ModelRequest, quote: object) -> None:
         if not isinstance(quote, CostQuote):
             raise ProviderContractError("provider adapter returned an invalid cost quote")
-        if quote.provider != request.provider.strip() or quote.model != request.model.strip():
+        if quote.provider != request.provider or quote.model != request.model:
             raise ProviderContractError(
                 "provider quote identity does not match the requested provider/model"
             )
@@ -339,7 +343,10 @@ def _build_registry(
 ) -> dict[str, PaidProviderAdapter]:
     registry: dict[str, PaidProviderAdapter] = {}
     for adapter in adapters:
-        name = adapter.name.strip()
+        raw_name = adapter.name
+        if not isinstance(raw_name, str):
+            raise TypeError("provider adapter name must be a string")
+        name = raw_name.strip()
         if not name:
             raise ValueError("provider adapter name must not be empty")
         if name in registry:
@@ -351,8 +358,8 @@ def _build_registry(
 def _request_fingerprint(request: ModelRequest, quote: CostQuote) -> str:
     payload = {
         "task_id": str(request.task_id),
-        "provider": request.provider.strip(),
-        "model": request.model.strip(),
+        "provider": request.provider,
+        "model": request.model,
         "input_text": request.input_text,
         "max_output_tokens": request.max_output_tokens,
         "metadata": dict(sorted(request.metadata.items())),
@@ -378,7 +385,12 @@ def _row_to_call(row: sqlite3.Row) -> _CallRecord:
 
 
 def _timestamp(now: datetime | None) -> str:
-    value = now or datetime.now(UTC)
+    if now is None:
+        value = datetime.now(UTC)
+    else:
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime when present")
+        value = now
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     return value.astimezone(UTC).isoformat()
