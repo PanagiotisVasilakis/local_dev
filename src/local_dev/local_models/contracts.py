@@ -62,9 +62,13 @@ class LocalGenerationRequest:
         model = self.model.strip()
         if not model:
             raise ValueError("model must not be empty")
-        if not self.messages:
+        try:
+            messages = tuple(self.messages)
+        except TypeError as exc:
+            raise TypeError("messages must be an iterable of LocalMessage values") from exc
+        if not messages:
             raise ValueError("at least one message is required")
-        if not all(isinstance(message, LocalMessage) for message in self.messages):
+        if not all(isinstance(message, LocalMessage) for message in messages):
             raise TypeError("messages must contain LocalMessage values")
         if self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be positive")
@@ -76,6 +80,7 @@ class LocalGenerationRequest:
         if self.seed is not None and (not isinstance(self.seed, int) or isinstance(self.seed, bool)):
             raise TypeError("seed must be an integer when present")
         object.__setattr__(self, "model", model)
+        object.__setattr__(self, "messages", messages)
         object.__setattr__(self, "temperature", temperature)
         object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
@@ -117,6 +122,8 @@ class LocalGenerationResponse:
             raise ValueError("runtime and model names must not be empty")
         if not isinstance(self.output_text, str) or not self.output_text.strip():
             raise ValueError("output_text must not be empty")
+        if not isinstance(self.usage, LocalUsage):
+            raise TypeError("usage must be LocalUsage")
         if self.finish_reason is not None:
             finish_reason = self.finish_reason.strip()
             if not finish_reason:
@@ -145,6 +152,10 @@ class LocalRuntimeHealth:
             raise ValueError("health model identifiers must not be empty")
         if len(set(normalized_models)) != len(normalized_models):
             raise ValueError("health model identifiers must be unique")
+        if self.status is LocalRuntimeStatus.READY and not normalized_models:
+            raise ValueError("READY health requires at least one advertised model")
+        if self.status is LocalRuntimeStatus.UNAVAILABLE and normalized_models:
+            raise ValueError("UNAVAILABLE health cannot advertise models")
         if self.detail is not None and not self.detail.strip():
             raise ValueError("detail must be non-empty when present")
         object.__setattr__(self, "runtime_name", runtime_name)

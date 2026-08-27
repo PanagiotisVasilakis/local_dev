@@ -9,9 +9,11 @@ from local_dev.local_models import (
     LocalGenerationRequest,
     LocalMessage,
     LocalMessageRole,
+    LocalRuntimeHealth,
     LocalRuntimeProtocolError,
     LocalRuntimeStatus,
     LocalRuntimeTimeout,
+    LocalUsage,
     OpenAICompatibleLocalRuntime,
     UrllibLocalHttpTransport,
 )
@@ -214,6 +216,42 @@ def test_contract_rejects_invalid_sampling_values() -> None:
             messages=(LocalMessage(LocalMessageRole.USER, "hi"),),
             max_output_tokens=10,
             temperature=2.1,
+        )
+
+
+def test_request_defensively_normalizes_mutable_message_iterable() -> None:
+    messages = [LocalMessage(LocalMessageRole.USER, "hi")]
+    req = LocalGenerationRequest(
+        task_id=uuid4(),
+        model="qwen",
+        messages=messages,  # type: ignore[arg-type]
+        max_output_tokens=10,
+    )
+    messages.append(LocalMessage(LocalMessageRole.USER, "mutated"))
+    assert isinstance(req.messages, tuple)
+    assert len(req.messages) == 1
+
+
+def test_response_requires_typed_usage_contract() -> None:
+    from local_dev.local_models import LocalGenerationResponse
+
+    with pytest.raises(TypeError, match="usage"):
+        LocalGenerationResponse(
+            runtime_name="local",
+            requested_model="qwen",
+            served_model="qwen",
+            output_text="ok",
+            finish_reason="stop",
+            usage={},  # type: ignore[arg-type]
+        )
+
+
+def test_ready_health_requires_an_advertised_model() -> None:
+    with pytest.raises(ValueError, match="READY"):
+        LocalRuntimeHealth(
+            runtime_name="local",
+            status=LocalRuntimeStatus.READY,
+            models=(),
         )
 
 

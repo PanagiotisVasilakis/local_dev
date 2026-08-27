@@ -5,6 +5,7 @@ import json
 import math
 import socket
 from dataclasses import dataclass
+from http.client import HTTPException
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -93,6 +94,8 @@ class UrllibLocalHttpTransport:
             if isinstance(exc.reason, (socket.timeout, TimeoutError)):
                 raise LocalRuntimeTimeout("local runtime request timed out") from exc
             raise LocalRuntimeUnavailable("local runtime could not be reached") from exc
+        except HTTPException as exc:
+            raise LocalRuntimeProtocolError("local runtime returned malformed HTTP") from exc
         except OSError as exc:
             raise LocalRuntimeUnavailable("local runtime transport failed") from exc
 
