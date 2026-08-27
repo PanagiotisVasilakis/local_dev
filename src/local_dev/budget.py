@@ -101,6 +101,7 @@ class BudgetGovernor:
                     or _eur_to_micros(reservation.reserved_eur) != reserved_micros
                 ):
                     raise BudgetConflict("idempotency key was already used with different parameters")
+                self._ensure_period_policy(connection, period, created_at)
                 return reservation
 
             self._ensure_period_policy(connection, period, created_at)
@@ -114,7 +115,10 @@ class BudgetGovernor:
 
             spent, active = _totals(connection, period)
             if spent + active + reserved_micros > self._limit_micros:
-                raise BudgetExceeded("monthly paid-API budget exhausted")
+                raise BudgetExceeded(
+                    "paid API call blocked: monthly budget would be exceeded; "
+                    "no paid call was authorized"
+                )
 
             reservation_id = uuid4()
             connection.execute(
