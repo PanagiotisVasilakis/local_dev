@@ -1,6 +1,6 @@
 # AUDIT-001 — Foundation through TASK-004
 
-Status: `HARDENING IMPLEMENTED — FINAL REVIEW PENDING`.
+Status: `PASS — integrated baseline deeply reviewed and hardened`.
 
 ## Objective
 
@@ -10,11 +10,11 @@ Review the integrated `master` state after TASK-001 through TASK-004 as one syst
 
 - Canonical branch: `master`
 - Audited baseline SHA: `e7fc62ef0c28e3c840e6ca84d4970d7ee21b8751`
-- TASK-004 is already integrated; its task branch is an ancestor of `master`.
+- TASK-004 was already integrated before this audit; its task branch was confirmed as an ancestor of `master`.
 - No real paid provider adapter is connected.
 - Runtime dependency list remains empty.
 
-## Findings requiring correction
+## Findings corrected
 
 ### 1. Verification status type bypass
 
@@ -56,7 +56,29 @@ Provider quote/response identities, gateway request values, adapter names, and m
 
 The paid-provider contracts and gateway now reject malformed runtime types before budget or provider state is mutated.
 
-## Non-blocking observations
+## Verification performed
+
+The final hardened candidate received a separate adversarial verification pass after the review fixes:
+
+- 61/61 integrated reconstructed tests passed. The suite covered audit regressions, TASK-002 budget behavior, TASK-003 gateway compatibility/lifecycle behavior, and TASK-004 local-runtime behavior.
+- Concurrent budget authorization and same-key paid-call dispatch remained fail-closed.
+- Provider success, over-budget, provider-not-sent, uncertain/replay, and accounting-breach paths were exercised with migrations 001 through 006 active.
+- Direct SQL attempts to create provider/budget lifecycle contradictions were rejected by SQLite integrity triggers.
+- A simulated UTC month rollover verified that reservation period and creation timestamp derive from one clock observation.
+- Real in-process loopback HTTP checks continued to reject redirects and oversized responses; direct non-loopback transport URLs were rejected before socket use.
+- Python bytecode compilation passed for the reconstructed source/tests.
+- Python 3.12 grammar parsing passed for the reconstructed source/tests.
+- The SQLite migration chain applied successfully in order: 001, 002, 003, 004, 005, 006.
+- A wheel was built from the reconstructed package configuration, verified to contain migrations 005/006, installed into a clean target, and successfully bootstrapped a new database through all six migrations.
+- Repository compare confirmed the audit branch remained a clean descendant of the audited `master` with no unrelated file changes.
+
+## Verification limitations
+
+The isolated execution container could not resolve `github.com`, so a fresh full repository clone and literal repo-wide test invocation against a checkout were not available. The audit therefore used GitHub-fetched committed source plus an isolated reconstruction of the affected integrated stack. This limitation is explicit; a full-checkout PASS is not claimed.
+
+`ruff` and `mypy` are configured development gates but were not installed in the isolated runtime, so they are not claimed as executed PASS evidence.
+
+## Non-blocking observations / planned debt
 
 - `master` currently has no GitHub branch protection and no remote commit status checks. Repository correctness therefore depends on the documented task-branch/review process rather than server-enforced CI gates.
 - No cloud CI is introduced by this audit. The project remains local-first and does not add runtime dependencies.
@@ -64,6 +86,8 @@ The paid-provider contracts and gateway now reject malformed runtime types befor
 - The durable budget limit is immutable within an established UTC period. An explicit same-month policy-change workflow does not yet exist; failure is conservative rather than permissive.
 - The current paid and local model request contracts are intentionally different and still text-oriented. A unified richer conversation/tool-call contract should be designed when routing/agent tool use is implemented, before real paid-provider adapters are considered production-ready.
 
-## Verification gate
+## Architecture verdict
 
-This audit is not complete until the final committed hardening receives another adversarial re-verification. Only then may it be integrated into `master` and used as the baseline for TASK-005.
+The current direction remains sound: deterministic state/accounting boundaries are established first, local inference is isolated from paid-provider execution, and repository understanding can now be added without weakening those guarantees. No known unresolved correctness, accounting, or local-network blocker remains within the TASK-001 through TASK-004 scope.
+
+The next architectural step remains the deterministic repository scanner/repo-map layer. Retrieval, AST/symbol indexing, semantic retrieval, routing, agent tooling, reconciliation, and richer model/tool-call contracts remain future tasks rather than missing prerequisites for repository scanning.
