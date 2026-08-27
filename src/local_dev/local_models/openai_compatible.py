@@ -130,8 +130,8 @@ class OpenAICompatibleLocalRuntime:
         name = runtime_name.strip()
         if not name:
             raise ValueError("runtime_name must not be empty")
-        if api_key is not None and not api_key:
-            raise ValueError("api_key must be non-empty when present")
+        if api_key is not None and (not isinstance(api_key, str) or not api_key.strip()):
+            raise ValueError("api_key must be a non-empty string when present")
 
         self._timeout_seconds = float(timeout_seconds)
         self._max_response_bytes = max_response_bytes

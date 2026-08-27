@@ -77,7 +77,9 @@ class LocalGenerationRequest:
         temperature = float(self.temperature)
         if not 0.0 <= temperature <= 2.0:
             raise ValueError("temperature must be between 0.0 and 2.0")
-        if self.seed is not None and (not isinstance(self.seed, int) or isinstance(self.seed, bool)):
+        if self.seed is not None and (
+            not isinstance(self.seed, int) or isinstance(self.seed, bool)
+        ):
             raise TypeError("seed must be an integer when present")
         object.__setattr__(self, "model", model)
         object.__setattr__(self, "messages", messages)
@@ -94,7 +96,9 @@ class LocalUsage:
     def __post_init__(self) -> None:
         for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
             value = getattr(self, name)
-            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+            ):
                 raise ValueError(f"{name} must be a non-negative integer when present")
         if (
             self.prompt_tokens is not None
