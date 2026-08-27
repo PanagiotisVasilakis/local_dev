@@ -1,6 +1,6 @@
 # TASK-005 — Deterministic Repository Scanner & Repo Map
 
-Status: `IMPLEMENTED — REVIEW GATE PENDING`.
+Status: `REVIEW FIXES IMPLEMENTED — FINAL VERIFICATION PENDING`.
 
 ## Objective
 
@@ -93,6 +93,30 @@ same scanner contract without changing snapshot consumers.
 
 The map is intentionally structural, not semantic. Later retrieval layers decide which files or
 symbols belong in model context.
+
+
+## Deep-review findings corrected
+
+The separate committed-code review identified and corrected the following issues:
+
+1. The initial path contract rejected valid POSIX filenames containing literal backslashes or
+   leading/trailing whitespace. Repository paths now preserve those legal filename bytes while
+   still rejecting absolute paths, `.` / `..` traversal components, NUL, and non-normalized `/`
+   structure.
+2. POSIX filenames decoded through `surrogateescape` could fail fingerprint serialization when
+   they contained non-UTF-8 bytes. Fingerprint and repo-map JSON escaping now uses ASCII-safe
+   escapes so arbitrary filesystem bytes remain representable.
+3. An active `.gitignore` could ignore its own pathname, leaving snapshot selection dependent on a
+   control file absent from the snapshot. Active ignore control files are now retained even when
+   their own file rule would exclude them; ignore files below an ignored parent remain inactive.
+4. Intermediate-directory symlink replacement was hardened with directory-descriptor traversal
+   rather than only protecting the final component.
+5. Special-entry identity now includes the semantic device identifier (`st_rdev`) without leaking
+   checkout-specific inode/device identity into the public fingerprint.
+6. Malformed ignore patterns that cannot be represented safely by the deterministic matcher are
+   surfaced as `RepositoryScanError` instead of leaking a raw regular-expression exception.
+7. Ambiguous `file_count` naming was replaced with explicit `entry_count` and
+   `regular_file_count`.
 
 ## Verification gate
 

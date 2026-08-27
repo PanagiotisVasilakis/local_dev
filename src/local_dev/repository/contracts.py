@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from collections.abc import Mapping
 
 
 class RepositoryScanError(RuntimeError):
@@ -106,8 +106,12 @@ class RepositorySnapshot:
         return sum(entry.size_bytes for entry in self.entries)
 
     @property
-    def file_count(self) -> int:
+    def entry_count(self) -> int:
         return len(self.entries)
+
+    @property
+    def regular_file_count(self) -> int:
+        return sum(entry.kind is RepositoryEntryKind.FILE for entry in self.entries)
 
     @property
     def language_counts(self) -> Mapping[str, int]:
@@ -165,7 +169,7 @@ def repository_fingerprint(entries: tuple[RepositoryEntry, ...]) -> str:
     ]
     encoded = json.dumps(
         payload,
-        ensure_ascii=False,
+        ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
@@ -205,9 +209,9 @@ def render_repo_map(snapshot: RepositorySnapshot) -> str:
     if not isinstance(snapshot, RepositorySnapshot):
         raise TypeError("snapshot must be RepositorySnapshot")
     lines = [
-        "repository: " + json.dumps(snapshot.repository_root.name, ensure_ascii=False),
+        "repository: " + json.dumps(snapshot.repository_root.name, ensure_ascii=True),
         f"fingerprint: {snapshot.fingerprint_sha256}",
-        f"entries: {snapshot.file_count}",
+        f"entries: {snapshot.entry_count}",
         f"bytes: {snapshot.total_bytes}",
     ]
     if snapshot.language_counts:
@@ -223,7 +227,7 @@ def render_repo_map(snapshot: RepositorySnapshot) -> str:
         lines.append(
             "\t".join(
                 (
-                    json.dumps(entry.path, ensure_ascii=False),
+                    json.dumps(entry.path, ensure_ascii=True),
                     entry.kind.value,
                     entry.content_kind.value,
                     language,
@@ -239,10 +243,10 @@ def render_repo_map(snapshot: RepositorySnapshot) -> str:
 def _normalized_repo_path(value: object) -> str:
     if not isinstance(value, str):
         raise TypeError("repository path must be a string")
-    if not value or value.strip() != value:
-        raise ValueError("repository path must be non-empty and normalized")
-    if "\\" in value:
-        raise ValueError("repository paths must use POSIX separators")
+    if not value:
+        raise ValueError("repository path must be non-empty")
+    if "\x00" in value:
+        raise ValueError("repository path must not contain NUL")
     pure = PurePosixPath(value)
     invalid_part = any(part in {"", ".", ".."} for part in pure.parts)
     if pure.is_absolute() or value in {".", ".."} or invalid_part:

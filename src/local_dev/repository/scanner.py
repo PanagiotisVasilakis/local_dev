@@ -3,10 +3,10 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from collections.abc import Mapping
 
 from local_dev.repository.contracts import (
     RepositoryContentKind,
@@ -116,12 +116,11 @@ class RepositoryScanPolicy:
             if (
                 not isinstance(name, str)
                 or not name
-                or name.strip() != name
+                or "\x00" in name
                 or "/" in name
-                or "\\" in name
                 or name in {".", ".."}
             ):
-                raise ValueError("excluded_names must contain normalized single path names")
+                raise ValueError("excluded_names must contain valid single path names")
         for field_name in (
             "max_entries",
             "hash_chunk_bytes",
@@ -140,6 +139,7 @@ class _StatSignature:
     device: int
     inode: int
     size: int
+    rdev: int
     mtime_ns: int
     ctime_ns: int
 
@@ -282,9 +282,18 @@ class RepositoryScanner:
                 text = content.decode("utf-8", errors="surrogateescape")
                 ignore_sources.append((item.path, text))
 
-        matcher = RepositoryIgnoreRules.from_sources(tuple(ignore_sources))
+        try:
+            matcher = RepositoryIgnoreRules.from_sources(tuple(ignore_sources))
+        except ValueError as exc:
+            raise RepositoryScanError("repository contains an invalid .gitignore pattern") from exc
         selected = [
-            item for item in raw if not matcher.is_ignored(item.path, is_dir=False)
+            item
+            for item in raw
+            if (
+                PurePosixPath(item.path).name == ".gitignore"
+                and not matcher.has_ignored_ancestor(item.path)
+            )
+            or not matcher.is_ignored(item.path, is_dir=False)
         ]
         return tuple(sorted(selected, key=lambda item: item.path))
 
@@ -313,7 +322,9 @@ class RepositoryScanner:
                 language=None,
             )
 
-        special_payload = f"special:{stat.S_IFMT(item.signature.mode)}".encode("ascii")
+        special_payload = (
+            f"special:{stat.S_IFMT(item.signature.mode)}:{item.signature.rdev}"
+        ).encode("ascii")
         return RepositoryEntry(
             path=item.path,
             kind=item.kind,
@@ -432,8 +443,10 @@ class RepositoryScanner:
 
 
 def detect_language(path: str) -> str | None:
-    if not isinstance(path, str) or not path:
-        raise ValueError("path must be a non-empty string")
+    if not isinstance(path, str):
+        raise TypeError("path must be a string")
+    if not path:
+        raise ValueError("path must be non-empty")
     pure = PurePosixPath(path)
     lower_name = pure.name.lower()
     if lower_name.startswith("dockerfile"):
@@ -606,6 +619,7 @@ def _stat_signature(info: os.stat_result) -> _StatSignature:
         device=int(info.st_dev),
         inode=int(info.st_ino),
         size=int(info.st_size),
+        rdev=int(info.st_rdev),
         mtime_ns=int(info.st_mtime_ns),
         ctime_ns=int(info.st_ctime_ns),
     )

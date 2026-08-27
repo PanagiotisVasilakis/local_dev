@@ -37,7 +37,8 @@ def test_scan_is_deterministic_and_sorted(tmp_path: Path) -> None:
     snapshot = RepositoryScanner().scan(root.resolve())
 
     assert [entry.path for entry in snapshot.entries] == ["a.py", "nested/m.md", "z.txt"]
-    assert snapshot.file_count == 3
+    assert snapshot.entry_count == 3
+    assert snapshot.regular_file_count == 3
     assert snapshot.language_counts == {"Markdown": 1, "Python": 1}
     rescanned = RepositoryScanner().scan(root.resolve())
     assert snapshot.fingerprint_sha256 == rescanned.fingerprint_sha256
@@ -358,3 +359,60 @@ def test_repo_map_and_fingerprint_reject_unsorted_external_entries(tmp_path: Pat
     )
     with pytest.raises(ValueError, match="sorted"):
         repository_fingerprint((first, second))
+
+
+def test_valid_posix_whitespace_and_backslash_names_are_preserved(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root, " leading.txt", "a")
+    _write(root, "trailing ", "b")
+    _write(root, r"a\b.py", "c")
+
+    snapshot = RepositoryScanner().scan(root.resolve())
+    paths = [entry.path for entry in snapshot.entries]
+
+    assert " leading.txt" in paths
+    assert "trailing " in paths
+    assert r"a\b.py" in paths
+    assert detect_language(r"a\b.py") == "Python"
+
+
+def test_non_utf8_filename_has_stable_escaped_fingerprint_and_map(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    raw_path = os.fsencode(root) + b"/bad-\xff.py"
+    descriptor = os.open(raw_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        os.write(descriptor, b"print('x')\n")
+    finally:
+        os.close(descriptor)
+
+    snapshot = RepositoryScanner().scan(root.resolve())
+    assert snapshot.entry_count == 1
+    assert snapshot.entries[0].language == "Python"
+    rendered = render_repo_map(snapshot)
+    assert "\udcff" in rendered.lower()
+    assert len(snapshot.fingerprint_sha256) == 64
+
+
+def test_active_gitignore_is_included_even_if_it_ignores_itself(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root, ".gitignore", ".gitignore\n*.tmp\n")
+    _write(root, "drop.tmp", "x")
+    _write(root, "keep.txt", "x")
+
+    paths = [entry.path for entry in RepositoryScanner().scan(root.resolve()).entries]
+    assert ".gitignore" in paths
+    assert "drop.tmp" not in paths
+    assert "keep.txt" in paths
+
+
+def test_invalid_gitignore_pattern_fails_with_scanner_error(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root, ".gitignore", "[z-a].txt\n")
+    _write(root, "x.txt", "x")
+
+    with pytest.raises(RepositoryScanError, match="invalid .gitignore"):
+        RepositoryScanner().scan(root.resolve())

@@ -46,13 +46,18 @@ class RepositoryIgnoreRules:
         for ignore_path, raw in ordered:
             parent = PurePosixPath(ignore_path).parent
             base_relative = "" if parent.as_posix() == "." else parent.as_posix()
-            for line in raw.splitlines():
-                rule = _parse_rule(base_relative, line)
+            for line_number, line in enumerate(raw.splitlines(), start=1):
+                try:
+                    rule = _parse_rule(base_relative, line)
+                except re.error as exc:
+                    raise ValueError(
+                        f"invalid ignore pattern in {ignore_path} at line {line_number}"
+                    ) from exc
                 if rule is not None:
                     rules.append(rule)
         return cls(tuple(rules))
 
-    def is_ignored(self, path: str, *, is_dir: bool) -> bool:
+    def has_ignored_ancestor(self, path: str) -> bool:
         pure = PurePosixPath(path)
         parts = pure.parts
         for end in range(1, len(parts)):
@@ -60,6 +65,11 @@ class RepositoryIgnoreRules:
             decision = self._decision(ancestor, is_dir=True)
             if decision is True:
                 return True
+        return False
+
+    def is_ignored(self, path: str, *, is_dir: bool) -> bool:
+        if self.has_ignored_ancestor(path):
+            return True
         decision = self._decision(path, is_dir=is_dir)
         return decision is True
 
@@ -132,12 +142,17 @@ def _glob_regex(pattern: str) -> str:
             pieces.append("[^/]")
         elif char == "[":
             closing = pattern.find("]", index + 1)
-            if closing == -1:
+            if closing <= index + 1:
                 pieces.append(r"\[")
             else:
                 content = pattern[index + 1 : closing]
                 if content.startswith("!"):
-                    content = "^" + content[1:]
+                    content = content[1:]
+                    if not content:
+                        pieces.append(r"\[")
+                        index += 1
+                        continue
+                    content = "^" + content
                 elif content.startswith("^"):
                     content = "\\" + content
                 content = content.replace("\\", r"\\")
