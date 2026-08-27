@@ -1,6 +1,6 @@
 # AUDIT-002 — TASK-005 post-integration hardening
 
-Status: `HARDENING IMPLEMENTED — COMMITTED REVIEW PENDING`.
+Status: `PASS — committed hardening independently reviewed and verified`.
 
 ## Baseline
 
@@ -38,6 +38,10 @@ TASK-006 decodes these encodings losslessly when their BOM is present.
 
 ## Verification
 
+- Committed implementation checkpoint: `e00b32b14a08584ebb2792ae0ec73b24ac088751`.
+- GitHub compare confirmed the audit branch is exactly 1 commit ahead / 0 behind the audited master baseline and changes only scanner hardening, its regressions, and this audit record.
+- Every new production/test blob was matched to the locally executed Git object SHA before the commit tree was created; `_scanner_base.py` reuses the exact previously reviewed TASK-005 scanner blob `ae81e091f12109e2f87ec36b052b7bdb1f58c7f2`.
+
 - 33/33 TASK-005 scanner tests passed after the additional hardening.
 - A regression repository with `dist/` ignored and a traversal budget too small for the ignored
   subtree scans successfully without descending into `dist/`.
@@ -55,6 +59,10 @@ TASK-006 decodes these encodings losslessly when their BOM is present.
 The execution container still cannot resolve `github.com`, so verification is performed on exact
 GitHub-fetched/locally hashed source material rather than a fresh network clone. `ruff` and `mypy`
 are configured gates but are not installed in the isolated runtime and are not claimed as PASS.
+
+## Committed review verdict
+
+The post-commit review found no additional correctness blocker. The compatibility shim preserves the public `RepositoryScanner`, `RepositoryScanPolicy`, `detect_language`, and race-injection hook while the previously reviewed implementation remains byte-identical in `_scanner_base.py`. The final committed structure was re-run through the complete 33-test TASK-005 suite, bytecode compilation, and Python 3.12 grammar parsing.
 
 ## Verdict
 
