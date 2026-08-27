@@ -4,7 +4,7 @@ Local-first agentic software-engineering system focused on high-quality code, ev
 
 ## Current status
 
-`TASK-001` (repository foundation), `TASK-002` (hard budget governor), `TASK-003` (provider abstraction and paid-call boundary), and `TASK-004` (local model runtime) are complete and integrated into the canonical `master` branch. The integrated foundation-through-TASK-004 baseline has also passed `AUDIT-001`, a separate cross-task architecture/correctness hardening review. No real paid model provider is connected yet.
+`TASK-001` (repository foundation), `TASK-002` (hard budget governor), `TASK-003` (provider abstraction and paid-call boundary), `TASK-004` (local model runtime), and `TASK-005` (deterministic repository scanner and repo map) are complete, deeply reviewed, and integrated into the canonical `master` branch. The integrated foundation-through-TASK-004 baseline also passed `AUDIT-001`, a separate cross-task architecture/correctness hardening review. No real paid model provider is connected yet.
 
 ## Design principles
 
@@ -17,6 +17,7 @@ Local-first agentic software-engineering system focused on high-quality code, ev
 - Monetary values used for budget enforcement are represented exactly, never as binary floats.
 - Ambiguous provider-dispatch outcomes fail closed: budget remains reserved and replay is blocked.
 - Local-model HTTP execution is restricted to numeric loopback endpoints; environment proxies and HTTP redirects are disabled for that transport.
+- Repository observation is deterministic and fail-closed: secure no-follow traversal, stable content fingerprints, explicit race detection, and repository-local ignore rules precede retrieval/indexing.
 - Boundary contracts validate security/accounting-relevant runtime types instead of relying on type annotations alone.
 - Modular monolith first; split services only when measurements justify it.
 - Runtime dependencies are added only when they provide material value.
@@ -52,6 +53,8 @@ mypy src
 `AUDIT-001` adds durable provider/reservation coherence checks and hardens deterministic runtime contracts and UTC budget accounting without changing the core architecture.
 
 `TASK-004` adds the vendor-neutral local model runtime plus an OpenAI-compatible loopback-only HTTP implementation. It does not select or install a specific inference engine or model; runtime/model selection and prompt compilation are later concerns.
+
+`TASK-005` adds a deterministic POSIX repository scanner and structural repo map. It securely traverses repository contents without following symlink targets, applies repository-local ignore rules, hashes stable entry semantics, detects concurrent filesystem mutation, and produces comparable repository snapshots for later indexing and retrieval.
 
 No real paid provider SDK or paid network integration has been added yet.
 
