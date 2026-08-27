@@ -11,7 +11,9 @@ Local-first agentic software-engineering system focused on high-quality code, ev
 - Local-first storage and retrieval.
 - Deterministic orchestration around probabilistic models.
 - Evidence from repository state and executed tools is authoritative; model summaries are not.
+- A verification result cannot be marked `PASSED` without an evidence reference.
 - Paid calls must eventually pass through a hard budget governor.
+- Monetary values used for budget enforcement are represented exactly, never as binary floats.
 - Modular monolith first; split services only when measurements justify it.
 - Runtime dependencies are added only when they provide material value.
 
@@ -38,3 +40,7 @@ mypy src
 | `LOCAL_DEV_LOG_LEVEL` | `INFO` | Structured logging level |
 
 The €20 value is configuration only in TASK-001. Enforcement is implemented in TASK-002; no paid provider calls should be added before that governor exists.
+
+## Database migrations
+
+Migration files are bundled under `src/local_dev/migrations/`, are append-only, and are named `NNN_name.sql`. Applied migrations are tracked by numeric version, filename, and SHA-256 checksum. Renaming, editing, deleting, or inserting an older migration fails closed. Pending migrations are applied in one explicit SQLite transaction; migration files must not contain their own transaction-control statements.

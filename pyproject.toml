@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,24 +8,28 @@ version = "0.1.0"
 description = "Local-first, budget-governed agentic software engineering system"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Panagiotis Vasilakis" }]
 dependencies = []
 
 [project.optional-dependencies]
 dev = [
   "mypy>=1.17,<2",
-  "pytest>=8.4,<9",
+  "pytest>=8.4,<10",
   "ruff>=0.12,<1",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"local_dev.migrations" = ["*.sql"]
+
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q --strict-config --strict-markers --import-mode=importlib"
 testpaths = ["tests"]
-pythonpath = ["src"]
+xfail_strict = true
 
 [tool.ruff]
 target-version = "py312"

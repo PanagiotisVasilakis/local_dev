@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Mapping
+from types import MappingProxyType
 from uuid import UUID, uuid4
 
 
@@ -63,6 +64,7 @@ class TaskSpec:
             raise ValueError("prompt must not be empty")
         if not self.repository_root.is_absolute():
             raise ValueError("repository_root must be an absolute path")
+        object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +83,7 @@ class ModelRequest:
             raise ValueError("input_text must not be empty")
         if self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be positive")
+        object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,3 +95,16 @@ class VerificationResult:
     def __post_init__(self) -> None:
         if not self.summary.strip():
             raise ValueError("verification summary must not be empty")
+        if self.status is VerificationStatus.PASSED and not self.evidence:
+            raise ValueError("passed verification requires evidence")
+
+
+def _freeze_metadata(metadata: Mapping[str, str]) -> Mapping[str, str]:
+    copied: dict[str, str] = {}
+    for key, value in metadata.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("metadata keys must be non-empty strings")
+        if not isinstance(value, str):
+            raise TypeError("metadata values must be strings")
+        copied[key] = value
+    return MappingProxyType(copied)

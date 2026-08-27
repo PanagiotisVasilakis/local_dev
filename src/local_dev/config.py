@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -9,16 +10,18 @@ from pathlib import Path
 class Settings:
     data_dir: Path
     database_path: Path
-    monthly_budget_eur: float
+    monthly_budget_eur: Decimal
     log_level: str
 
     @classmethod
     def from_env(cls) -> "Settings":
-        data_dir = Path(os.getenv("LOCAL_DEV_DATA_DIR", "~/.local/share/local-dev")).expanduser()
-        database_path = Path(
+        data_dir = _absolute_path(
+            os.getenv("LOCAL_DEV_DATA_DIR", "~/.local/share/local-dev")
+        )
+        database_path = _absolute_path(
             os.getenv("LOCAL_DEV_DATABASE_PATH", str(data_dir / "local_dev.db"))
-        ).expanduser()
-        monthly_budget_eur = _positive_float(
+        )
+        monthly_budget_eur = _positive_decimal(
             "LOCAL_DEV_MONTHLY_BUDGET_EUR",
             os.getenv("LOCAL_DEV_MONTHLY_BUDGET_EUR", "20"),
         )
@@ -33,11 +36,17 @@ class Settings:
         )
 
 
-def _positive_float(name: str, raw: str) -> float:
+def _absolute_path(raw: str) -> Path:
+    return Path(raw).expanduser().resolve(strict=False)
+
+
+def _positive_decimal(name: str, raw: str) -> Decimal:
     try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a number") from exc
+        value = Decimal(raw.strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite decimal number") from exc
+    if not value.is_finite():
+        raise ValueError(f"{name} must be a finite decimal number")
     if value <= 0:
         raise ValueError(f"{name} must be greater than zero")
     return value

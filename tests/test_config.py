@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -16,15 +17,25 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = Settings.from_env()
 
-    assert settings.monthly_budget_eur == 20.0
+    assert settings.monthly_budget_eur == Decimal("20")
     assert settings.log_level == "INFO"
+    assert settings.data_dir.is_absolute()
     assert settings.database_path == settings.data_dir / "local_dev.db"
 
 
-def test_settings_reject_non_positive_budget(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LOCAL_DEV_MONTHLY_BUDGET_EUR", "0")
-    with pytest.raises(ValueError, match="greater than zero"):
+@pytest.mark.parametrize("raw", ["0", "-1", "nan", "inf", "-inf", "not-a-number", ""])
+def test_settings_reject_invalid_budget(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("LOCAL_DEV_MONTHLY_BUDGET_EUR", raw)
+    with pytest.raises(ValueError):
         Settings.from_env()
+
+
+def test_settings_preserves_exact_decimal_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOCAL_DEV_MONTHLY_BUDGET_EUR", "19.999999")
+    settings = Settings.from_env()
+    assert settings.monthly_budget_eur == Decimal("19.999999")
 
 
 def test_settings_accept_explicit_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -36,3 +47,14 @@ def test_settings_accept_explicit_paths(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
     assert settings.data_dir == tmp_path
     assert settings.database_path == db_path
+
+
+def test_settings_normalizes_log_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOCAL_DEV_LOG_LEVEL", "debug")
+    assert Settings.from_env().log_level == "DEBUG"
+
+
+def test_settings_rejects_invalid_log_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOCAL_DEV_LOG_LEVEL", "verbose")
+    with pytest.raises(ValueError, match="invalid LOCAL_DEV_LOG_LEVEL"):
+        Settings.from_env()
