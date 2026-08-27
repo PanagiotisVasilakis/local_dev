@@ -40,6 +40,22 @@ class Database:
         finally:
             connection.close()
 
+    @contextmanager
+    def immediate_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Own a BEGIN IMMEDIATE transaction for serialized read-modify-write state."""
+
+        connection = self._open_connection()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            yield connection
+            connection.execute("COMMIT")
+        except Exception:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+        finally:
+            connection.close()
+
     def migrate(self) -> None:
         migrations = self._discover_migrations()
         connection = self._open_connection()
