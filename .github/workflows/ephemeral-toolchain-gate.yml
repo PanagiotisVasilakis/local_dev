@@ -4,17 +4,14 @@ on:
   push:
     branches:
       - audit/003-toolchain-baseline
-  pull_request:
-    branches:
-      - master
 
 permissions:
   contents: read
 
 jobs:
-  export-fix-candidate:
+  verify-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,15 +25,245 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]' build
+          python --version
+          pytest --version
+          ruff --version
+          mypy --version
+          python -m build --version
 
-      - name: Generate Ruff fix candidate
+      - name: Build reviewed baseline candidate
         shell: bash
         run: |
           set -euo pipefail
-          ruff check . --fix --unsafe-fixes || true
-          git diff -- src tests > ruff-full-fix.patch
-          rm -rf fix-candidate
-          mkdir -p fix-candidate
+          ruff check . --fix || true
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text()
+              if old not in text:
+                  raise RuntimeError(f'expected text not found in {path}: {old!r}')
+              target.write_text(text.replace(old, new, 1))
+
+          replace(
+              'src/local_dev/budget.py',
+              '                    raise BudgetConflict("idempotency key was already used with different parameters")\n',
+              '                    raise BudgetConflict(\n'
+              '                        "idempotency key was already used with different parameters"\n'
+              '                    )\n',
+          )
+          replace(
+              'src/local_dev/budget.py',
+              '                    raise BudgetConflict("breached reservation already recorded a different actual cost")\n',
+              '                    raise BudgetConflict(\n'
+              '                        "breached reservation already recorded a different actual cost"\n'
+              '                    )\n',
+          )
+          replace(
+              'src/local_dev/providers/gateway.py',
+              'from collections.abc import Iterable\n',
+              'from collections.abc import Iterable\nfrom contextlib import suppress\n',
+          )
+          replace(
+              'src/local_dev/providers/gateway.py',
+              '        try:\n'
+              '            self._finish_call(\n'
+              '                call_id,\n'
+              '                ProviderCallStatus.UNCERTAIN,\n'
+              '                error_type=error_type,\n'
+              '                now=now,\n'
+              '            )\n'
+              '        except Exception:\n'
+              '            # Leaving the record in DISPATCHING is even more conservative and\n'
+              '            # still prevents replay, so never hide the original provider error.\n'
+              '            pass\n',
+              '        # If this write fails, DISPATCHING is even more conservative and still\n'
+              '        # prevents replay, so never hide the original provider error.\n'
+              '        with suppress(Exception):\n'
+              '            self._finish_call(\n'
+              '                call_id,\n'
+              '                ProviderCallStatus.UNCERTAIN,\n'
+              '                error_type=error_type,\n'
+              '                now=now,\n'
+              '            )\n',
+          )
+          replace(
+              'src/local_dev/structure/_collector_support.py',
+              '        node: ast.AST,\n',
+              '        node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,\n',
+          )
+          replace(
+              'src/local_dev/structure/_contract_helpers.py',
+              '        result = tuple(values)  # type: ignore[arg-type]\n'
+              '    except TypeError as exc:\n'
+              '        raise TypeError(f"{name} must be iterable") from exc\n'
+              '    for value in result:\n'
+              '        require_path(value)\n'
+              '    if result != tuple(sorted(set(result))):\n'
+              '        raise ValueError(f"{name} must contain unique sorted paths")\n'
+              '    return result\n',
+              '        result: tuple[object, ...] = tuple(values)  # type: ignore[arg-type]\n'
+              '    except TypeError as exc:\n'
+              '        raise TypeError(f"{name} must be iterable") from exc\n'
+              '    normalized = tuple(require_path(value) for value in result)\n'
+              '    if normalized != tuple(sorted(set(normalized))):\n'
+              '        raise ValueError(f"{name} must contain unique sorted paths")\n'
+              '    return normalized\n',
+          )
+          replace(
+              'src/local_dev/retrieval/contracts.py',
+              '        normalized = tuple(values)  # type: ignore[arg-type]\n'
+              '    except TypeError as exc:\n'
+              '        raise TypeError(f"{name} must be iterable") from exc\n'
+              '    if not all(isinstance(value, str) and value for value in normalized):\n'
+              '        raise ValueError(f"{name} must contain non-empty strings")\n'
+              '    expected = tuple(sorted(set(normalized)))\n'
+              '    if normalized != expected:\n'
+              '        raise ValueError(f"{name} must contain unique sorted paths")\n'
+              '    return normalized\n',
+              '        raw: tuple[object, ...] = tuple(values)  # type: ignore[arg-type]\n'
+              '    except TypeError as exc:\n'
+              '        raise TypeError(f"{name} must be iterable") from exc\n'
+              '    if not all(isinstance(value, str) and value for value in raw):\n'
+              '        raise ValueError(f"{name} must contain non-empty strings")\n'
+              '    normalized = tuple(value for value in raw if isinstance(value, str))\n'
+              '    expected = tuple(sorted(set(normalized)))\n'
+              '    if normalized != expected:\n'
+              '        raise ValueError(f"{name} must contain unique sorted paths")\n'
+              '    return normalized\n',
+          )
+          replace(
+              'src/local_dev/structure/_writer.py',
+              'from local_dev.structure.contracts import StructuralFileStatus, StructuralIndexPolicy\n',
+              'from local_dev.structure.contracts import (\n'
+              '    StructuralFileStatus,\n'
+              '    StructuralImport,\n'
+              '    StructuralIndexPolicy,\n'
+              '    StructuralSymbol,\n'
+              ')\n',
+          )
+          replace(
+              'src/local_dev/structure/_writer.py',
+              '    symbols = ()\n    imports = ()\n',
+              '    symbols: tuple[StructuralSymbol, ...] = ()\n'
+              '    imports: tuple[StructuralImport, ...] = ()\n',
+          )
+
+          def combine_nested_contexts(path: str) -> None:
+              target = Path(path)
+              lines = target.read_text().splitlines(keepends=True)
+              output: list[str] = []
+              index = 0
+              changed = False
+              while index < len(lines):
+                  first = lines[index]
+                  if (
+                      first.startswith('    with pytest.raises(')
+                      and first.rstrip().endswith('):')
+                      and index + 1 < len(lines)
+                      and lines[index + 1].startswith('        with database.')
+                      and lines[index + 1].rstrip().endswith(':')
+                  ):
+                      second = lines[index + 1]
+                      first_context = first.strip()[5:-1]
+                      second_context = second.strip()[5:-1]
+                      output.extend(
+                          [
+                              '    with (\n',
+                              f'        {first_context},\n',
+                              f'        {second_context},\n',
+                              '    ):\n',
+                          ]
+                      )
+                      index += 2
+                      while index < len(lines):
+                          current = lines[index]
+                          if current.strip():
+                              indent = len(current) - len(current.lstrip(' '))
+                              if indent <= 8:
+                                  break
+                              if indent >= 12:
+                                  current = current[4:]
+                          output.append(current)
+                          index += 1
+                      changed = True
+                      continue
+                  output.append(first)
+                  index += 1
+              if changed:
+                  target.write_text(''.join(output))
+
+          for filename in (
+              'tests/test_budget.py',
+              'tests/test_budget_review.py',
+              'tests/test_foundation_audit.py',
+              'tests/test_lexical_index_query.py',
+              'tests/test_provider_gateway.py',
+          ):
+              combine_nested_contexts(filename)
+          PY
+          ruff format \
+            src/local_dev/budget.py \
+            src/local_dev/providers/gateway.py \
+            src/local_dev/structure/_collector_support.py \
+            src/local_dev/structure/_contract_helpers.py \
+            src/local_dev/retrieval/contracts.py \
+            src/local_dev/structure/_writer.py \
+            tests/test_budget.py \
+            tests/test_budget_review.py \
+            tests/test_foundation_audit.py \
+            tests/test_lexical_index_query.py \
+            tests/test_provider_gateway.py
+          ruff check . --fix
+          git diff --check
+
+      - name: Run full verification gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest
+          ruff check .
+          mypy src
+          python -m compileall -q src tests
+          rm -rf dist build
+          python -m build
+
+      - name: Clean-install and migration smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/local-dev-clean
+          /tmp/local-dev-clean/bin/python -m pip install --upgrade pip
+          /tmp/local-dev-clean/bin/python -m pip install --no-deps dist/*.whl
+          cd /tmp
+          /tmp/local-dev-clean/bin/python - <<'PY'
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          from local_dev.db import Database
+
+          with TemporaryDirectory() as temporary:
+              database = Database(Path(temporary) / 'state.db')
+              database.migrate()
+              with database.connect() as connection:
+                  versions = [
+                      row[0]
+                      for row in connection.execute(
+                          'SELECT version FROM schema_migrations ORDER BY version'
+                      ).fetchall()
+                  ]
+                  assert versions == list(range(1, 9)), versions
+                  assert connection.execute('PRAGMA foreign_key_check').fetchall() == []
+                  assert connection.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+          print('clean install + migrations 001..008: PASS')
+          PY
+
+      - name: Export exact verified changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf verified-files
+          mkdir -p verified-files
           python - <<'PY'
           from pathlib import Path
           import shutil
@@ -48,27 +275,16 @@ jobs:
           ).splitlines()
           for item in changed:
               source = Path(item)
-              target = Path('fix-candidate') / item
+              target = Path('verified-files') / item
               target.parent.mkdir(parents=True, exist_ok=True)
               shutil.copy2(source, target)
+          Path('verified-files/CHANGED_FILES.txt').write_text('\n'.join(changed) + '\n')
           print('\n'.join(changed))
           PY
-          git diff --check
-          echo '--- remaining Ruff findings ---'
-          ruff check . || true
-          echo '--- mypy findings ---'
-          mypy src || true
 
-      - name: Upload full Ruff patch
+      - name: Upload verified files
         uses: actions/upload-artifact@v4
         with:
-          name: ruff-full-fix-patch
-          path: ruff-full-fix.patch
-          if-no-files-found: error
-
-      - name: Upload exact full-fix files
-        uses: actions/upload-artifact@v4
-        with:
-          name: ruff-full-fix-files
-          path: fix-candidate
+          name: audit003-verified-files
+          path: verified-files
           if-no-files-found: error
