@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  export-safe-fixes:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -29,20 +29,38 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]' build
 
-      - name: Generate safe Ruff autofix patch
+      - name: Apply safe Ruff fixes and export exact files
         shell: bash
         run: |
           set -euo pipefail
           ruff check . --fix || true
-          git diff -- src tests > ruff-autofix.patch
+          rm -rf autofix-files
+          mkdir -p autofix-files
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          import subprocess
+
+          changed = subprocess.check_output(
+              ['git', 'diff', '--name-only', '--', 'src', 'tests'],
+              text=True,
+          ).splitlines()
+          for item in changed:
+              source = Path(item)
+              target = Path('autofix-files') / item
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source, target)
+          print('\n'.join(changed))
+          PY
+          git diff --check
           echo '--- remaining Ruff findings ---'
           ruff check . || true
           echo '--- mypy findings ---'
           mypy src || true
 
-      - name: Upload Ruff autofix patch
+      - name: Upload exact safe-fixed files
         uses: actions/upload-artifact@v4
         with:
-          name: ruff-autofix
-          path: ruff-autofix.patch
+          name: ruff-safe-files
+          path: autofix-files
           if-no-files-found: error
