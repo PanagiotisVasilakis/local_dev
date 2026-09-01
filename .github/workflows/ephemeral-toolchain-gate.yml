@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  export-safe-fixes:
+  export-fix-candidate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -29,13 +29,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]' build
 
-      - name: Apply safe Ruff fixes and export exact files
+      - name: Generate Ruff fix candidate
         shell: bash
         run: |
           set -euo pipefail
-          ruff check . --fix || true
-          rm -rf autofix-files
-          mkdir -p autofix-files
+          ruff check . --fix --unsafe-fixes || true
+          git diff -- src tests > ruff-full-fix.patch
+          rm -rf fix-candidate
+          mkdir -p fix-candidate
           python - <<'PY'
           from pathlib import Path
           import shutil
@@ -47,7 +48,7 @@ jobs:
           ).splitlines()
           for item in changed:
               source = Path(item)
-              target = Path('autofix-files') / item
+              target = Path('fix-candidate') / item
               target.parent.mkdir(parents=True, exist_ok=True)
               shutil.copy2(source, target)
           print('\n'.join(changed))
@@ -58,9 +59,16 @@ jobs:
           echo '--- mypy findings ---'
           mypy src || true
 
-      - name: Upload exact safe-fixed files
+      - name: Upload full Ruff patch
         uses: actions/upload-artifact@v4
         with:
-          name: ruff-safe-files
-          path: autofix-files
+          name: ruff-full-fix-patch
+          path: ruff-full-fix.patch
+          if-no-files-found: error
+
+      - name: Upload exact full-fix files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-full-fix-files
+          path: fix-candidate
           if-no-files-found: error
