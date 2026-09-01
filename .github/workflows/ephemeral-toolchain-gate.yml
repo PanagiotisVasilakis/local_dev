@@ -1,0 +1,90 @@
+name: Ephemeral toolchain gate
+
+on:
+  push:
+    branches:
+      - audit/003-toolchain-baseline
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install verification toolchain
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]' build
+          python --version
+          pytest --version
+          ruff --version
+          mypy --version
+          python -m build --version
+
+      - name: Run full verification gate
+        shell: bash
+        run: |
+          set +e
+          failed=0
+          gate() {
+            name="$1"
+            shift
+            echo "::group::$name"
+            "$@"
+            status=$?
+            echo "::endgroup::"
+            if [ "$status" -ne 0 ]; then
+              echo "GATE FAILED: $name (exit $status)"
+              failed=1
+            else
+              echo "GATE PASSED: $name"
+            fi
+          }
+          gate pytest python -m pytest
+          gate ruff ruff check .
+          gate mypy mypy src
+          gate compileall python -m compileall -q src tests
+          gate build python -m build
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Clean-install and migration smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/local-dev-clean
+          /tmp/local-dev-clean/bin/python -m pip install --upgrade pip
+          /tmp/local-dev-clean/bin/python -m pip install --no-deps dist/*.whl
+          cd /tmp
+          /tmp/local-dev-clean/bin/python - <<'PY'
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+
+          from local_dev.db import Database
+
+          with TemporaryDirectory() as temporary:
+              database = Database(Path(temporary) / 'state.db')
+              database.migrate()
+              with database.connect() as connection:
+                  versions = [
+                      row[0]
+                      for row in connection.execute(
+                          'SELECT version FROM schema_migrations ORDER BY version'
+                      ).fetchall()
+                  ]
+                  assert versions == list(range(1, 9)), versions
+                  assert connection.execute('PRAGMA foreign_key_check').fetchall() == []
+                  assert connection.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+          print('clean install + migrations 001..008: PASS')
+          PY
